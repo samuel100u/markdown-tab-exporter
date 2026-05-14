@@ -7,10 +7,17 @@
     "default_title": "Export page to Markdown",
     "default_popup": "src/popup.html"
   },
+  "background": {
+    "service_worker": "assets/background.js",
+    "type": "module"
+  },
   "permissions": [
     "activeTab",
+    "contextMenus",
     "downloads",
+    "offscreen",
     "scripting",
+    "storage",
     "tabs"
   ],
   "host_permissions": [

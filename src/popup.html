@@ -23,6 +23,30 @@
           Export All Tabs as ZIP
           <span>One Markdown file per readable tab</span>
         </button>
+        <button id="export-linked" type="button">
+          Export Linked Pages as ZIP
+          <span>Same-origin links from this page, up to 50 pages</span>
+        </button>
+      </section>
+
+      <section class="settings" aria-label="Linked pages export settings">
+        <h2>Linked Pages Settings</h2>
+        <label>
+          Max pages
+          <input id="linked-max-pages" type="number" min="1" max="200" step="1" />
+        </label>
+        <label>
+          Link scope
+          <select id="linked-scope">
+            <option value="same-origin">Same origin</option>
+            <option value="same-hostname">Same hostname</option>
+          </select>
+        </label>
+        <label>
+          Load timeout
+          <input id="linked-timeout" type="number" min="5" max="120" step="5" />
+          <span>seconds per linked page</span>
+        </label>
       </section>
 
       <section class="status" aria-live="polite">

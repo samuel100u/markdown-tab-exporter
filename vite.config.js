@@ -5,8 +5,11 @@ export default defineConfig({
   publicDir: "public",
   build: {
     emptyOutDir: true,
+    minify: false,
     rollupOptions: {
       input: {
+        background: resolve(__dirname, "src/background.js"),
+        offscreen: resolve(__dirname, "src/offscreen.html"),
         popup: resolve(__dirname, "src/popup.html")
       },
       output: {

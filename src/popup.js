@@ -1,138 +1,40 @@
 import "./popup.css";
 import {
-  UnsupportedPageError,
-  collectPageSnapshot,
-  extractMarkdownFromSnapshot,
-  isSupportedPageUrl,
-  makeMarkdownFilename,
-  makeZipFilename
-} from "./extractPage.js";
-import { createMarkdownZip, downloadBlob } from "./zipExport.js";
+  exportAllTabs,
+  exportCurrentPage,
+  exportLinkedPagesFromCurrentTab,
+  toUserMessage
+} from "./exportService.js";
+import { getExportSettings, saveExportSettings } from "./settings.js";
 
 const exportCurrentButton = document.querySelector("#export-current");
 const exportAllButton = document.querySelector("#export-all");
+const exportLinkedButton = document.querySelector("#export-linked");
+const actionButtons = [exportCurrentButton, exportAllButton, exportLinkedButton];
+const linkedMaxPagesInput = document.querySelector("#linked-max-pages");
+const linkedScopeSelect = document.querySelector("#linked-scope");
+const linkedTimeoutInput = document.querySelector("#linked-timeout");
+const settingsInputs = [linkedMaxPagesInput, linkedScopeSelect, linkedTimeoutInput];
 const statusMessage = document.querySelector("#status-message");
 const detailsList = document.querySelector("#details");
 
+initializeSettings();
+
 exportCurrentButton.addEventListener("click", () => {
-  runWithBusyState(exportCurrentPage);
+  runWithBusyState(() => exportCurrentPage({ onStatus: setStatus }));
 });
 
 exportAllButton.addEventListener("click", () => {
-  runWithBusyState(exportAllTabs);
+  runWithBusyState(() => exportAllTabs({ onStatus: setStatus }));
 });
 
-async function exportCurrentPage() {
-  setStatus("Reading current page...");
-  const [tab] = await queryTabs({ active: true, currentWindow: true });
+exportLinkedButton.addEventListener("click", () => {
+  runWithBusyState(() => exportLinkedPagesFromCurrentTab({ onStatus: setStatus }));
+});
 
-  if (!tab) {
-    throw new Error("No active tab was found.");
-  }
-
-  const exported = await exportTab(tab);
-  const blob = new Blob([exported.content], {
-    type: "text/markdown;charset=utf-8"
-  });
-
-  setStatus("Choose where to save the Markdown file...");
-  await downloadBlob(blob, exported.name);
-  setStatus("Current page exported.", [`Saved ${exported.name}`]);
-}
-
-async function exportAllTabs() {
-  const tabs = await queryTabs({ currentWindow: true });
-  const readableTabs = tabs.filter((tab) => isSupportedPageUrl(tab.url));
-  const skippedTabs = tabs
-    .filter((tab) => !isSupportedPageUrl(tab.url))
-    .map((tab) => `${tab.title || tab.url || "Untitled tab"}: unsupported page type`);
-
-  const files = [];
-  const failures = [...skippedTabs];
-
-  for (const [readableIndex, tab] of readableTabs.entries()) {
-    setStatus(`Reading tab ${readableIndex + 1} of ${readableTabs.length}...`);
-
-    try {
-      files.push(await exportTab(tab, readableIndex));
-    } catch (error) {
-      failures.push(`${tab.title || tab.url || "Untitled tab"}: ${toUserMessage(error)}`);
-    }
-  }
-
-  if (!files.length) {
-    throw new Error("No readable tabs could be exported.");
-  }
-
-  setStatus(`Creating ZIP with ${files.length} Markdown file${files.length === 1 ? "" : "s"}...`);
-  const zipBlob = await createMarkdownZip(files);
-
-  setStatus("Choose where to save the ZIP file...");
-  await downloadBlob(zipBlob, makeZipFilename());
-
-  const summary = [`Exported ${files.length} tab${files.length === 1 ? "" : "s"}.`];
-
-  if (failures.length) {
-    summary.push(`Skipped ${failures.length} tab${failures.length === 1 ? "" : "s"}.`);
-  }
-
-  setStatus("All readable tabs exported.", [...summary, ...failures.slice(0, 8)]);
-}
-
-async function exportTab(tab, index) {
-  if (!isSupportedPageUrl(tab.url)) {
-    throw new UnsupportedPageError(tab.url);
-  }
-
-  const snapshot = await executeInTab(tab.id, collectPageSnapshot);
-  const extracted = extractMarkdownFromSnapshot(snapshot);
-
-  return {
-    content: extracted.markdown,
-    name: makeMarkdownFilename(extracted.title || tab.title, tab.url, index)
-  };
-}
-
-function executeInTab(tabId, func) {
-  return new Promise((resolve, reject) => {
-    chrome.scripting.executeScript(
-      {
-        func,
-        target: { tabId }
-      },
-      (results) => {
-        const error = chrome.runtime.lastError;
-
-        if (error) {
-          reject(new Error(error.message));
-          return;
-        }
-
-        const [mainFrameResult] = results || [];
-
-        if (!mainFrameResult?.result) {
-          reject(new Error("The page did not return content."));
-          return;
-        }
-
-        resolve(mainFrameResult.result);
-      }
-    );
-  });
-}
-
-function queryTabs(queryInfo) {
-  return new Promise((resolve, reject) => {
-    chrome.tabs.query(queryInfo, (tabs) => {
-      const error = chrome.runtime.lastError;
-
-      if (error) {
-        reject(new Error(error.message));
-        return;
-      }
-
-      resolve(tabs);
-    });
+for (const input of settingsInputs) {
+  input.addEventListener("change", () => {
+    saveSettingsFromForm();
   });
 }
 
@@ -150,8 +52,9 @@ async function runWithBusyState(task) {
 }
 
 function setBusy(isBusy) {
-  exportCurrentButton.disabled = isBusy;
-  exportAllButton.disabled = isBusy;
+  for (const button of actionButtons) {
+    button.disabled = isBusy;
+  }
 }
 
 function setStatus(message, details = []) {
@@ -169,18 +72,32 @@ function createDetailItem(text) {
   return item;
 }
 
-function toUserMessage(error) {
-  if (!error) {
-    return "Unknown error.";
+async function initializeSettings() {
+  try {
+    renderSettings(await getExportSettings());
+  } catch (error) {
+    setStatus("Could not load settings.", [toUserMessage(error)]);
   }
-
-  if (error.message?.includes("Cannot access")) {
-    return "Chrome blocked access to this page.";
-  }
-
-  if (error.message?.includes("The extensions gallery cannot be scripted")) {
-    return "Chrome blocks extensions from reading the Chrome Web Store.";
-  }
-
-  return error.message || String(error);
 }
+
+async function saveSettingsFromForm() {
+  try {
+    const settings = await saveExportSettings({
+      linkedExportMaxPages: linkedMaxPagesInput.value,
+      linkedExportScope: linkedScopeSelect.value,
+      linkedExportTimeoutSeconds: linkedTimeoutInput.value
+    });
+
+    renderSettings(settings);
+    setStatus("Settings saved.");
+  } catch (error) {
+    setStatus("Could not save settings.", [toUserMessage(error)]);
+  }
+}
+
+function renderSettings(settings) {
+  linkedMaxPagesInput.value = settings.linkedExportMaxPages;
+  linkedScopeSelect.value = settings.linkedExportScope;
+  linkedTimeoutInput.value = settings.linkedExportTimeoutSeconds;
+}
+

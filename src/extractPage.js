@@ -74,6 +74,123 @@ export function collectPageSnapshot() {
   };
 }
 
+export function collectReadableLinks(options = {}) {
+  const maxPages = Number.isFinite(options.maxPages) ? options.maxPages : 50;
+  const scope = options.scope === "same-hostname" ? "same-hostname" : "same-origin";
+  const baseUrl = location.href;
+  const origin = location.origin;
+  const hostname = location.hostname;
+  const ignoredExtensions = new Set([
+    ".7z",
+    ".avi",
+    ".css",
+    ".csv",
+    ".doc",
+    ".docx",
+    ".gif",
+    ".gz",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".js",
+    ".json",
+    ".mp3",
+    ".mp4",
+    ".pdf",
+    ".png",
+    ".ppt",
+    ".pptx",
+    ".rar",
+    ".svg",
+    ".tar",
+    ".webp",
+    ".xls",
+    ".xlsx",
+    ".xml",
+    ".zip"
+  ]);
+  const ignoredPathParts = [
+    "/account",
+    "/auth",
+    "/login",
+    "/logout",
+    "/signin",
+    "/signup",
+    "/share",
+    "/subscribe"
+  ];
+  const links = [];
+  const seen = new Set();
+
+  for (const anchor of Array.from(document.querySelectorAll("a[href]"))) {
+    const rawHref = anchor.getAttribute("href") || "";
+
+    if (
+      rawHref.startsWith("#") ||
+      rawHref.startsWith("javascript:") ||
+      rawHref.startsWith("mailto:") ||
+      rawHref.startsWith("tel:")
+    ) {
+      continue;
+    }
+
+    let url;
+
+    try {
+      url = new URL(rawHref, baseUrl);
+    } catch {
+      continue;
+    }
+
+    if (!["http:", "https:"].includes(url.protocol) || !isWithinScope(url)) {
+      continue;
+    }
+
+    url.hash = "";
+
+    const normalizedUrl = url.href;
+    const lowerPath = url.pathname.toLowerCase();
+    const extension = lowerPath.match(/\.[a-z0-9]+$/)?.[0] || "";
+
+    if (
+      normalizedUrl === baseUrl.split("#")[0] ||
+      ignoredExtensions.has(extension) ||
+      ignoredPathParts.some((part) => lowerPath.includes(part)) ||
+      seen.has(normalizedUrl)
+    ) {
+      continue;
+    }
+
+    seen.add(normalizedUrl);
+    links.push({
+      text: normalizeLinkText(anchor.textContent),
+      url: normalizedUrl
+    });
+
+    if (links.length >= maxPages) {
+      break;
+    }
+  }
+
+  return {
+    sourceTitle: document.title || "",
+    sourceUrl: baseUrl,
+    links
+  };
+
+  function normalizeLinkText(value) {
+    return (value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function isWithinScope(url) {
+    if (scope === "same-hostname") {
+      return url.hostname === hostname;
+    }
+
+    return url.origin === origin;
+  }
+}
+
 export function extractMarkdownFromSnapshot(snapshot) {
   if (!snapshot?.html) {
     throw new Error("The page did not return readable HTML.");
@@ -113,9 +230,9 @@ export function makeMarkdownFilename(title, url, index) {
   return `${prefix}${safeTitle}.md`;
 }
 
-export function makeZipFilename() {
+export function makeZipFilename(prefix = "markdown-tabs") {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return `markdown-tabs-${timestamp}.zip`;
+  return `${prefix}-${timestamp}.zip`;
 }
 
 function parseHtml(html, baseUrl) {
