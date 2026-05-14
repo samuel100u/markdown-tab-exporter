@@ -13,6 +13,7 @@
   },
   "permissions": [
     "activeTab",
+    "clipboardWrite",
     "contextMenus",
     "downloads",
     "offscreen",

@@ -19,13 +19,21 @@
           Export Current Page
           <span>Download this tab as .md</span>
         </button>
+        <button id="copy-current" type="button">
+          Copy Current Page
+          <span>Copy this tab as Markdown</span>
+        </button>
         <button id="export-all" type="button">
           Export All Tabs as ZIP
           <span>One Markdown file per readable tab</span>
         </button>
         <button id="export-linked" type="button">
-          Export Linked Pages as ZIP
-          <span>Same-origin links from this page, up to 50 pages</span>
+          Export Linked Pages
+          <span>Save linked pages as a ZIP</span>
+        </button>
+        <button id="stop-export" class="danger-button" type="button">
+          Stop Running Export
+          <span>Ask the current export to stop</span>
         </button>
       </section>
 
@@ -33,7 +41,12 @@
         <h2>Linked Pages Settings</h2>
         <label>
           Max pages
-          <input id="linked-max-pages" type="number" min="1" max="200" step="1" />
+          <input id="linked-max-pages" type="number" min="1" max="1000" step="1" />
+        </label>
+        <label>
+          Parallel tabs
+          <input id="linked-parallel-tabs" type="number" min="1" max="5" step="1" />
+          <span>temporary tabs to process at once</span>
         </label>
         <label>
           Link scope
@@ -43,9 +56,18 @@
           </select>
         </label>
         <label>
+          URL must start with
+          <input id="linked-url-prefix" type="text" placeholder="/run/docs/ or https://docs.example.com/run/docs/" />
+          <span>Leave empty to auto-prioritize the current docs section</span>
+        </label>
+        <label>
           Load timeout
           <input id="linked-timeout" type="number" min="5" max="120" step="5" />
           <span>seconds per linked page</span>
+        </label>
+        <label class="checkbox-label">
+          <input id="linked-enforce-language" type="checkbox" />
+          Keep the same language as the starting page
         </label>
       </section>
 

@@ -73,6 +73,11 @@ label {
   font-weight: 700;
 }
 
+.checkbox-label {
+  align-items: center;
+  grid-template-columns: auto 1fr;
+}
+
 input,
 select {
   width: 100%;
@@ -82,6 +87,10 @@ select {
   background: rgba(15, 23, 42, 0.86);
   color: #f8fafc;
   font: inherit;
+}
+
+input[type="checkbox"] {
+  width: auto;
 }
 
 label span {
@@ -113,6 +122,15 @@ button:hover:not(:disabled) {
   border-color: #38bdf8;
   background: rgba(14, 116, 144, 0.36);
   transform: translateY(-1px);
+}
+
+.danger-button {
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+.danger-button:hover:not(:disabled) {
+  border-color: #f87171;
+  background: rgba(127, 29, 29, 0.5);
 }
 
 button:disabled {

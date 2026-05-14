@@ -36,6 +36,47 @@ const RESERVED_WINDOWS_NAMES = new Set([
   "lpt8",
   "lpt9"
 ]);
+const KNOWN_LANGUAGE_CODES = new Set([
+  "ar",
+  "bg",
+  "bn",
+  "ca",
+  "cs",
+  "da",
+  "de",
+  "el",
+  "en",
+  "es",
+  "et",
+  "fi",
+  "fr",
+  "he",
+  "hi",
+  "hr",
+  "hu",
+  "id",
+  "it",
+  "ja",
+  "ko",
+  "lt",
+  "lv",
+  "ms",
+  "nl",
+  "no",
+  "pl",
+  "pt",
+  "ro",
+  "ru",
+  "sk",
+  "sl",
+  "sr",
+  "sv",
+  "th",
+  "tr",
+  "uk",
+  "vi",
+  "zh"
+]);
 
 export class UnsupportedPageError extends Error {
   constructor(url) {
@@ -68,6 +109,7 @@ export function collectPageSnapshot() {
     baseUrl: document.baseURI,
     html: `<!doctype html>${clone.outerHTML}`,
     lang: document.documentElement.lang || "",
+    readyState: document.readyState,
     text: document.body?.innerText || "",
     title: document.title || "",
     url: location.href
@@ -75,9 +117,54 @@ export function collectPageSnapshot() {
 }
 
 export function collectReadableLinks(options = {}) {
+  const knownLanguageCodes = new Set([
+    "ar",
+    "bg",
+    "bn",
+    "ca",
+    "cs",
+    "da",
+    "de",
+    "el",
+    "en",
+    "es",
+    "et",
+    "fi",
+    "fr",
+    "he",
+    "hi",
+    "hr",
+    "hu",
+    "id",
+    "it",
+    "ja",
+    "ko",
+    "lt",
+    "lv",
+    "ms",
+    "nl",
+    "no",
+    "pl",
+    "pt",
+    "ro",
+    "ru",
+    "sk",
+    "sl",
+    "sr",
+    "sv",
+    "th",
+    "tr",
+    "uk",
+    "vi",
+    "zh"
+  ]);
+  const enforceLanguage = options.enforceLanguage !== false;
   const maxPages = Number.isFinite(options.maxPages) ? options.maxPages : 50;
   const scope = options.scope === "same-hostname" ? "same-hostname" : "same-origin";
   const baseUrl = location.href;
+  const urlPrefix = normalizeUrlPrefix(options.urlPrefix, baseUrl);
+  const sourceSectionPrefix = getSectionPrefix(new URL(baseUrl).pathname);
+  const sourceLanguage = detectLocalPageLanguage(baseUrl, document.documentElement.lang);
   const origin = location.origin;
   const hostname = location.hostname;
   const ignoredExtensions = new Set([
@@ -119,7 +206,7 @@ export function collectReadableLinks(options = {}) {
     "/share",
     "/subscribe"
   ];
-  const links = [];
+  const candidates = [];
   const seen = new Set();
 
   for (const anchor of Array.from(document.querySelectorAll("a[href]"))) {
@@ -148,6 +235,14 @@ export function collectReadableLinks(options = {}) {
 
     url.hash = "";
 
+    if (urlPrefix && !url.href.startsWith(urlPrefix)) {
+      continue;
+    }
+
+    if (enforceLanguage && !isSameLanguageUrl(sourceLanguage, url)) {
+      continue;
+    }
+
     const normalizedUrl = url.href;
     const lowerPath = url.pathname.toLowerCase();
     const extension = lowerPath.match(/\.[a-z0-9]+$/)?.[0] || "";
@@ -162,17 +257,20 @@ export function collectReadableLinks(options = {}) {
     }
 
     seen.add(normalizedUrl);
-    links.push({
+    candidates.push({
+      sectionRank: getSectionRank(url),
       text: normalizeLinkText(anchor.textContent),
       url: normalizedUrl
     });
-
-    if (links.length >= maxPages) {
-      break;
-    }
   }
 
+  const links = candidates
+    .sort((left, right) => left.sectionRank - right.sectionRank)
+    .slice(0, maxPages)
+    .map(({ text, url }) => ({ text, url }));
+
   return {
+    sourceLanguage,
     sourceTitle: document.title || "",
     sourceUrl: baseUrl,
     links
@@ -189,6 +287,347 @@ export function collectReadableLinks(options = {}) {
 
     return url.origin === origin;
   }
+
+  function getSectionRank(url) {
+    if (urlPrefix && url.href.startsWith(urlPrefix)) {
+      return 0;
+    }
+
+    if (sourceSectionPrefix && url.pathname.startsWith(sourceSectionPrefix)) {
+      return 0;
+    }
+
+    if (url.pathname.startsWith("/docs/")) {
+      return 2;
+    }
+
+    return 1;
+  }
+
+  function getSectionPrefix(pathname) {
+    const segments = pathname.split("/").filter(Boolean);
+    const docsIndex = segments.indexOf("docs");
+
+    if (docsIndex > 0) {
+      return `/${segments.slice(0, docsIndex + 1).join("/")}/`;
+    }
+
+    if (docsIndex === 0) {
+      return "/docs/";
+    }
+
+    return segments.length ? `/${segments[0]}/` : "";
+  }
+
+  function normalizeUrlPrefix(value, baseUrl) {
+    const trimmedValue = (value || "").trim();
+
+    if (!trimmedValue) {
+      return "";
+    }
+
+    try {
+      return new URL(trimmedValue, baseUrl).href;
+    } catch {
+      return trimmedValue;
+    }
+  }
+
+  function detectLocalPageLanguage(url, htmlLang = "") {
+    const normalizedHtmlLang = normalizeLocalLanguageCode(htmlLang);
+    const urlLanguage = detectLocalUrlLanguage(url);
+
+    return {
+      htmlLang: normalizedHtmlLang,
+      primary: normalizedHtmlLang || urlLanguage || "",
+      urlLanguage
+    };
+  }
+
+  function isSameLanguageUrl(sourceLanguage, url) {
+    if (!sourceLanguage?.urlLanguage) {
+      return true;
+    }
+
+    const targetUrlLanguage = detectLocalUrlLanguage(url.href);
+
+    if (!targetUrlLanguage) {
+      return true;
+    }
+
+    return languageFamiliesMatch(sourceLanguage.urlLanguage, targetUrlLanguage);
+  }
+
+  function detectLocalUrlLanguage(url) {
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return "";
+    }
+
+    for (const param of ["hl", "lang", "language", "locale"]) {
+      const value = normalizeLocalLanguageCode(parsedUrl.searchParams.get(param));
+
+      if (isLocalLanguageCode(value)) {
+        return value;
+      }
+    }
+
+    for (const segment of parsedUrl.pathname.split("/").filter(Boolean)) {
+      const normalizedSegment = normalizeLocalLanguageCode(segment);
+
+      if (isLocalLanguageCode(normalizedSegment)) {
+        return normalizedSegment;
+      }
+    }
+
+    return "";
+  }
+
+  function normalizeLocalLanguageCode(value) {
+    return (value || "").toLowerCase().replace("_", "-").trim();
+  }
+
+  function isLocalLanguageCode(value) {
+    if (!/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/.test(value || "")) {
+      return false;
+    }
+
+    return knownLanguageCodes.has(value.split("-")[0]);
+  }
+
+  function languageFamiliesMatch(sourceLanguage, targetLanguage) {
+    const sourcePrimary = normalizeLocalLanguageCode(sourceLanguage).split("-")[0];
+    const targetPrimary = normalizeLocalLanguageCode(targetLanguage).split("-")[0];
+
+    return Boolean(sourcePrimary && targetPrimary && sourcePrimary === targetPrimary);
+  }
+}
+
+export function selectElementLinks(options = {}) {
+  return new Promise((resolve, reject) => {
+    const highlight = document.createElement("div");
+    const label = document.createElement("div");
+    const maxPages = Number.isFinite(options.maxPages) ? options.maxPages : 50;
+    const scope = options.scope === "same-hostname" ? "same-hostname" : "same-origin";
+    const baseUrl = location.href;
+    const origin = location.origin;
+    const hostname = location.hostname;
+    const urlPrefix = normalizeUrlPrefix(options.urlPrefix, baseUrl);
+    let selectedElement = document.body;
+
+    highlight.style.cssText = [
+      "position: fixed",
+      "z-index: 2147483646",
+      "pointer-events: none",
+      "border: 3px solid #38bdf8",
+      "background: rgba(56, 189, 248, 0.12)",
+      "box-shadow: 0 0 0 99999px rgba(15, 23, 42, 0.18)",
+      "transition: all 80ms ease"
+    ].join(";");
+
+    label.style.cssText = [
+      "position: fixed",
+      "z-index: 2147483647",
+      "pointer-events: none",
+      "max-width: 420px",
+      "padding: 8px 10px",
+      "border-radius: 10px",
+      "background: #0f172a",
+      "color: #e0f2fe",
+      "font: 12px/1.4 system-ui, sans-serif",
+      "box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35)"
+    ].join(";");
+
+    document.documentElement.append(highlight, label);
+    updateHighlight(selectedElement);
+
+    window.addEventListener("mousemove", onMouseMove, true);
+    window.addEventListener("click", onClick, true);
+    window.addEventListener("keydown", onKeyDown, true);
+
+    function onMouseMove(event) {
+      selectedElement = findLinkContainer(event.target);
+      updateHighlight(selectedElement);
+    }
+
+    function onClick(event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const links = collectLinksFromElement(selectedElement);
+      cleanup();
+
+      if (!links.length) {
+        reject(new Error("No links were found inside the selected element."));
+        return;
+      }
+
+      resolve({
+        links,
+        sourceLanguage: {
+          htmlLang: "",
+          primary: "",
+          urlLanguage: ""
+        },
+        sourceTitle: document.title || "",
+        sourceUrl: baseUrl
+      });
+    }
+
+    function onKeyDown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cleanup();
+        reject(new Error("Element link selection was canceled."));
+      }
+    }
+
+    function cleanup() {
+      window.removeEventListener("mousemove", onMouseMove, true);
+      window.removeEventListener("click", onClick, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      highlight.remove();
+      label.remove();
+    }
+
+    function findLinkContainer(target) {
+      let element = target instanceof Element ? target : document.body;
+
+      while (element && element !== document.documentElement) {
+        if (element.querySelectorAll?.("a[href]").length) {
+          return element;
+        }
+
+        element = element.parentElement;
+      }
+
+      return document.body;
+    }
+
+    function updateHighlight(element) {
+      const rect = element.getBoundingClientRect();
+      const linkCount = collectLinksFromElement(element).length;
+
+      highlight.style.left = `${Math.max(rect.left, 0)}px`;
+      highlight.style.top = `${Math.max(rect.top, 0)}px`;
+      highlight.style.width = `${Math.max(rect.width, 0)}px`;
+      highlight.style.height = `${Math.max(rect.height, 0)}px`;
+
+      label.style.left = `${Math.min(Math.max(rect.left, 8), window.innerWidth - 430)}px`;
+      label.style.top = `${Math.min(Math.max(rect.top - 44, 8), window.innerHeight - 56)}px`;
+      label.textContent = `Click to export ${linkCount} link${linkCount === 1 ? "" : "s"} inside this element. Esc to cancel.`;
+    }
+
+    function collectLinksFromElement(element) {
+      const links = [];
+      const seen = new Set();
+
+      for (const anchor of Array.from(element.querySelectorAll("a[href]"))) {
+        const rawHref = anchor.getAttribute("href") || "";
+
+        if (
+          rawHref.startsWith("#") ||
+          rawHref.startsWith("javascript:") ||
+          rawHref.startsWith("mailto:") ||
+          rawHref.startsWith("tel:")
+        ) {
+          continue;
+        }
+
+        let url;
+
+        try {
+          url = new URL(rawHref, baseUrl);
+        } catch {
+          continue;
+        }
+
+        url.hash = "";
+
+        if (!["http:", "https:"].includes(url.protocol) || !isWithinScope(url)) {
+          continue;
+        }
+
+        if (urlPrefix && !url.href.startsWith(urlPrefix)) {
+          continue;
+        }
+
+        if (url.href === baseUrl.split("#")[0] || seen.has(url.href)) {
+          continue;
+        }
+
+        seen.add(url.href);
+        links.push({
+          text: (anchor.textContent || "").replace(/\s+/g, " ").trim(),
+          url: url.href
+        });
+
+        if (links.length >= maxPages) {
+          break;
+        }
+      }
+
+      return links;
+    }
+
+    function isWithinScope(url) {
+      if (scope === "same-hostname") {
+        return url.hostname === hostname;
+      }
+
+      return url.origin === origin;
+    }
+
+    function normalizeUrlPrefix(value, baseUrl) {
+      const trimmedValue = (value || "").trim();
+
+      if (!trimmedValue) {
+        return "";
+      }
+
+      try {
+        return new URL(trimmedValue, baseUrl).href;
+      } catch {
+        return trimmedValue;
+      }
+    }
+  });
+}
+
+export function detectPageLanguage(url, htmlLang = "") {
+  const normalizedHtmlLang = normalizeLanguageCode(htmlLang);
+  const urlLanguage = detectUrlLanguage(url);
+
+  return {
+    htmlLang: normalizedHtmlLang,
+    primary: normalizedHtmlLang || urlLanguage || "",
+    urlLanguage
+  };
+}
+
+export function isSameLanguagePage(sourceLanguage, pageLanguage) {
+  if (!sourceLanguage?.primary || !pageLanguage?.primary) {
+    return true;
+  }
+
+  return languageFamiliesMatch(sourceLanguage.primary, pageLanguage.primary);
+}
+
+function isSameLanguageUrl(sourceLanguage, url) {
+  if (!sourceLanguage?.urlLanguage) {
+    return true;
+  }
+
+  const targetUrlLanguage = detectUrlLanguage(url.href);
+
+  if (!targetUrlLanguage) {
+    return true;
+  }
+
+  return languageFamiliesMatch(sourceLanguage.urlLanguage, targetUrlLanguage);
 }
 
 export function extractMarkdownFromSnapshot(snapshot) {
@@ -424,6 +863,53 @@ function normalizeMarkdown(markdown) {
 
 function cleanInlineText(value) {
   return (value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeLanguageCode(value) {
+  return (value || "").toLowerCase().replace("_", "-").trim();
+}
+
+function detectUrlLanguage(url) {
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return "";
+  }
+
+  for (const param of ["hl", "lang", "language", "locale"]) {
+    const value = normalizeLanguageCode(parsedUrl.searchParams.get(param));
+
+    if (isLanguageCode(value)) {
+      return value;
+    }
+  }
+
+  for (const segment of parsedUrl.pathname.split("/").filter(Boolean)) {
+    const normalizedSegment = normalizeLanguageCode(segment);
+
+    if (isLanguageCode(normalizedSegment)) {
+      return normalizedSegment;
+    }
+  }
+
+  return "";
+}
+
+function isLanguageCode(value) {
+  if (!/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/.test(value || "")) {
+    return false;
+  }
+
+  return KNOWN_LANGUAGE_CODES.has(value.split("-")[0]);
+}
+
+function languageFamiliesMatch(sourceLanguage, targetLanguage) {
+  const sourcePrimary = normalizeLanguageCode(sourceLanguage).split("-")[0];
+  const targetPrimary = normalizeLanguageCode(targetLanguage).split("-")[0];
+
+  return Boolean(sourcePrimary && targetPrimary && sourcePrimary === targetPrimary);
 }
 
 function sanitizeFilename(value) {
