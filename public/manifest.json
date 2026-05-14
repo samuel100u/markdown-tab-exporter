@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Markdown Tab Exporter",
+  "description": "Export the current page or all readable tabs as Markdown for AI analysis.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Export page to Markdown",
+    "default_popup": "src/popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}

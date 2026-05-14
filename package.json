@@ -1,0 +1,18 @@
+{
+  "name": "markdown-tab-exporter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "jszip": "^3.10.1",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12"
+  }
+}

@@ -1,0 +1,116 @@
+:root {
+  color-scheme: light dark;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background: #111827;
+  color: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 360px;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.24), transparent 36%),
+    #111827;
+}
+
+.app {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.eyebrow,
+.description {
+  margin: 0;
+  color: #94a3b8;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 4px 0 6px;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.actions {
+  display: grid;
+  gap: 10px;
+}
+
+button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.86);
+  color: #f8fafc;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  text-align: left;
+  transition:
+    border-color 150ms ease,
+    transform 150ms ease,
+    background 150ms ease;
+}
+
+button:hover:not(:disabled) {
+  border-color: #38bdf8;
+  background: rgba(14, 116, 144, 0.36);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+button span {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status {
+  min-height: 72px;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  padding-top: 14px;
+  color: #dbeafe;
+  font-size: 13px;
+}
+
+#status-message {
+  font-weight: 700;
+}
+
+#details {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  margin: 10px 0 0;
+  overflow: auto;
+  padding-left: 18px;
+  color: #cbd5e1;
+}
+
+#details:empty {
+  display: none;
+}
